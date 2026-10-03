@@ -195,5 +195,6 @@ Hooks and tools are Python 3.8+ stdlib only and run on Windows and Linux. Hook c
 `python "$CLAUDE_PROJECT_DIR/..."` (Windows has `python`); on Linux images with only `python3`, initialise with
 `python3 tools/init_project.py ... --python python3`, which rewrites every hook command (or symlink `python`).
 Hook calls are logged to `.claude/run-state/hooks.log.jsonl` (SubagentStop: every call with its outcome
-stored/blocked/invalid/ignored/error and the verdict source; Stop decisions; guard denies; hook exceptions). Visual review of
-GPU-dependent rendering needs a machine with a GPU.
+stored/blocked/invalid/ignored/error and the verdict source; Stop decisions; guard denies; hook exceptions). Software
+rendering (lavapipe under `xvfb-run`) gives the same image as a GPU, only slower, so visual review can run on a Linux
+machine without a GPU; the performance gate and real-time play-testing need a GPU.

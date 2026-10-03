@@ -4,6 +4,20 @@ This guide explains how a game or a 3D asset goes from a few concept pictures to
 It covers who does what, which tools are involved, and the order things happen in. The [README](../README.md) is the
 detailed reference; this page is the overview.
 
+## The 2-minute version
+
+- **Who does what.** Grok Bot managers plan the work, write the brief and review the results. Claude Code does all
+  the building. GitHub is the shared desk where briefs, code, screenshots and reports are left for each other.
+- **The order.** Concept images, then an approved art bible, then a written brief, then one unattended run that works
+  through the plan in phases, then a review of the results, a release, and lessons fed into the next brief.
+- **Each phase** is built, tested, reviewed, merged, tagged and released before the next one starts.
+- **What the kit adds.** An art bible gate that blocks building until the visual rules are approved, and a style
+  slice that gets one small scene looking right before content is built.
+- **Independent review.** A reviewer that sees only the screenshots scores the visuals, and review rounds are capped
+  so a missed bar closes the phase "below bar" instead of stopping the run.
+- **Guard rails.** A performance gate checks frame rates, hooks keep the run going and block risky commands, and a
+  watcher tells the managers when a run finishes or stalls.
+
 ## 1. The big picture: a small "company"
 
 Think of the setup as a small company with three parts:
@@ -263,9 +277,10 @@ named `<run>-build`, so there is always a download of the latest working build.
 
 ### Where things run
 - **By default, a Linux cloud machine** with no GPU. It builds, runs tests, and renders screenshots in software:
-  `xvfb-run` provides a virtual screen and a software driver such as lavapipe draws in place of a graphics card. This
-  is slow, and not good enough to judge final lighting.
-- **A PC with a GPU** for anything that depends on real graphics: final visual review and the performance check. The
+  `xvfb-run` provides a virtual screen and a software driver such as lavapipe draws in place of a graphics card. The
+  image is the same as a GPU render, just slower (about 0.7 seconds per 1080p frame), so screenshots and visual review
+  run on the Linux machine too.
+- **A PC with a GPU** only for the performance check and real-time play-testing, which need real frame rates. The
   heartbeat and the watcher let the managers follow a PC run from elsewhere through GitHub.
 
 ## 5. Order of operations
@@ -304,8 +319,8 @@ named `<run>-build`, so there is always a download of the latest working build.
 - **Godot 4** for game projects.
 - Optional: **Blender** for asset cleanup, a **Meshy** account for 3D generation, and an **image generator** for
   concept art.
-- A **Linux machine** for everyday runs (a cloud session or a small server), and a **PC with a GPU** for visual review
-  and performance checks.
+- A **Linux machine** for everyday runs (a cloud session or a small server), and a **PC with a GPU** for performance
+  checks and real-time play-testing.
 - Optional: **manager bots** (any agent setup that can write files to GitHub and run the watcher). You can also play
   the manager roles yourself: write the brief, launch, watch, and read the report.
 
