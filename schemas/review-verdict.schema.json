@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reviewer verdict (final JSON block of every review)",
+  "type": "object",
+  "required": [
+    "verdict",
+    "findings"
+  ],
+  "properties": {
+    "verdict": {
+      "enum": [
+        "pass",
+        "fix_needed",
+        "block"
+      ]
+    },
+    "commit": {
+      "type": "string"
+    },
+    "review_id": {
+      "type": "string",
+      "description": "visual-reviewer: the id it was given (<phase>-visualA-r<N> or <phase>-visual-r<N>); the SubagentStop hook stores the verdict under it"
+    },
+    "captured_by": {
+      "const": "subagent_stop",
+      "description": "set by .claude/hooks/subagent_stop.py on stored visual verdicts; tools/review.py close requires it"
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "set by the SubagentStop hook"
+    },
+    "shots_folder": {
+      "type": "string",
+      "description": "set by the SubagentStop hook: the folder the reviewer opened every shot PNG from"
+    },
+    "incomplete": {
+      "type": "boolean"
+    },
+    "bar": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "visual-reviewer: bar item -> pass | fail: reason"
+    },
+    "shots": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "visual-reviewer: shot name -> pass | fail: rubric items below the minimum and why"
+    },
+    "scores": {
+      "type": "object",
+      "description": "visual-reviewer: every shot of the current shot set -> every kit.json visual.rubric item -> 1-5, or \"n/a\" only on stage-A ids for items outside visual.stage_a_items (docs/visual-pipeline.md section 3)",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            {
+              "const": "n/a"
+            }
+          ]
+        }
+      }
+    },
+    "top_problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "description": "visual-reviewer: the three biggest problems by visual impact, most important first"
+    },
+    "shot_set_version": {
+      "type": "integer",
+      "description": "version of docs/shots/shots.json the shots were rendered from"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "blocking",
+          "scenario",
+          "fix"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "blocking": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "scenario": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "fixed",
+              "deferred",
+              "disputed"
+            ],
+            "description": "set by the main session after acting"
+          }
+        }
+      }
+    },
+    "ugliest": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5
+    },
+    "captured_from": {
+      "enum": [
+        "last_assistant_message",
+        "handback",
+        "tool_input",
+        "transcript_text"
+      ],
+      "description": "set by the SubagentStop hook: where the verdict was found"
+    },
+    "vs_previous": {
+      "type": [
+        "object",
+        "array",
+        "string"
+      ],
+      "description": "visual-reviewer: per shot better|same|worse vs the previous round, with why; says so explicitly when it reverses an earlier request"
+    }
+  }
+}

@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "run-report.json (end of run; the next brief is built from it)",
+  "type": "object",
+  "required": [
+    "run",
+    "result",
+    "started",
+    "ended",
+    "phases",
+    "reviews",
+    "spend",
+    "known_issues",
+    "change_next_time"
+  ],
+  "properties": {
+    "headline": {
+      "type": "string",
+      "description": "first key of the report; when any phase closed below bar: 'BELOW BAR: ...' with the phases, reviewed rounds and top known issues (written by `python tools/review.py headline`)"
+    },
+    "below_bar": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "ids of the phases closed done_below_bar (second key; empty when every visual phase passed)"
+    },
+    "run": {
+      "type": "string"
+    },
+    "result": {
+      "enum": [
+        "done",
+        "partial",
+        "blocked",
+        "halted"
+      ]
+    },
+    "started": {
+      "type": "string"
+    },
+    "ended": {
+      "type": "string"
+    },
+    "wall_minutes": {
+      "type": "number"
+    },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "weekly_percent_end": {
+          "type": "number"
+        },
+        "five_hour_percent_end": {
+          "type": "number"
+        },
+        "hit_limit": {
+          "type": "boolean"
+        },
+        "stop_hook_continues": {
+          "type": "integer"
+        },
+        "context_percent_end": {
+          "type": "number"
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "skipped",
+              "blocked",
+              "done_below_bar"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "minutes": {
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "known_issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_scores": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "verdict"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "rounds": {
+            "type": "integer"
+          },
+          "findings": {
+            "type": "integer"
+          },
+          "fixed": {
+            "type": "integer"
+          },
+          "deferred": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unreviewed": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "spend": {
+      "type": "object"
+    },
+    "tests": {
+      "type": "object"
+    },
+    "release": {
+      "type": "object"
+    },
+    "known_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "choices made without the owner; candidates for the next brief's non-negotiables"
+    },
+    "change_next_time": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "denied_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "from .claude/run-state/denied.jsonl and guard denies in hooks.log.jsonl"
+    }
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "run-state.json (live state for the orchestrating bots)",
+  "type": "object",
+  "required": [
+    "run",
+    "status",
+    "phases",
+    "updated"
+  ],
+  "properties": {
+    "run": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "planning",
+        "in_progress",
+        "done",
+        "blocked",
+        "halted"
+      ]
+    },
+    "current_phase": {
+      "type": "string",
+      "description": "phase being worked on (P<N>...); the watcher picks the phase's stall limit from it"
+    },
+    "blocked_reason": {
+      "type": "string",
+      "description": "why status is blocked; set by the kit when a visual stage had 2 rounds in a row without a captured verdict (the Stop hook then lets the session end, the watcher exits 3)"
+    },
+    "blocked_at": {
+      "type": "string",
+      "description": "ISO-8601 UTC time status became blocked"
+    },
+    "stall_min": {
+      "type": "number",
+      "description": "optional temporary stall limit in minutes (e.g. during a long bake); wins over kit.json stall_min for the watcher"
+    },
+    "phases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "in_progress",
+              "done",
+              "skipped",
+              "blocked",
+              "done_below_bar"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "review": {
+            "enum": [
+              "pending",
+              "passed",
+              "fixed",
+              "unreviewed"
+            ]
+          },
+          "blocking_open": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "closed_at": {
+            "type": "string"
+          },
+          "closed_below_bar": {
+            "type": "boolean",
+            "description": "set by tools/review.py close --known-issues"
+          },
+          "known_issues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "open top problems of the last stored verdict per stage (below bar)"
+          },
+          "last_scores": {
+            "type": "object",
+            "description": "stage (stage_a|main) -> the last stored verdict's scores (below bar)"
+          },
+          "rounds": {
+            "type": "object",
+            "description": "stage -> 'reviewed/cap' review rounds (below bar; only rounds with a captured verdict count)"
+          },
+          "last_reviews": {
+            "type": "object",
+            "description": "stage -> review id of the last stored verdict (below bar)"
+          }
+        }
+      }
+    },
+    "reviews": {
+      "type": "object",
+      "description": "maintained by tools/review.py"
+    },
+    "spend": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "cap": {
+            "type": "number"
+          },
+          "used": {
+            "type": "number"
+          }
+        }
+      },
+      "description": "maintained by tools/paid.py"
+    },
+    "tests": {
+      "type": "object",
+      "properties": {
+        "smoke": {
+          "enum": [
+            "green",
+            "red"
+          ]
+        },
+        "smoke_cost": {
+          "type": "string"
+        },
+        "long": {
+          "type": "string"
+        },
+        "deterministic": {
+          "type": "boolean"
+        }
+      }
+    },
+    "release": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string"
+        },
+        "asset": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "shots": {
+      "type": "string",
+      "description": "path of the latest contact sheet"
+    },
+    "updated": {
+      "type": "string",
+      "description": "ISO-8601 UTC time from date -u / git (the watcher's PC-mode fallback stall signal)"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Claude Code session id of the run (resume: claude -p --resume <id>); recorded at start"
+    }
+  }
+}

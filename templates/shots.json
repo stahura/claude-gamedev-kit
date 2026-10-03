@@ -1,0 +1,25 @@
+{
+	"_doc": "Fixed, versioned shot set for look-and-fix (docs/visual-pipeline.md section 3), framed on the style slice. Bump version on any change; compare renders only within one version. scene is an engine path; pos/look_at in metres; settle_frames lets TAA, GI and exposure converge before capture; seed seeds the RNG per shot, then time is frozen for the capture. Iterations render to docs/shots/_work/ (git-ignored); only final/ and changes/ are committed.",
+	"version": 1,
+	"resolution": [1920, 1080],
+	"settle_frames": 30,
+	"seed": 1,
+	"shots": [
+		{"name": "shot-01-wide", "scene": "res://scenes/style_slice.tscn", "pos": [24, 8, 24], "look_at": [0, 1, 0], "fov": 55,
+		 "refs": ["docs/refs/lighting-mood.png"], "judge": "composition, depth layers, key light direction, fog, grade vs mood ref"},
+		{"name": "shot-02-hero-character", "scene": "res://scenes/style_slice.tscn", "pos": [0, 1.6, 4], "look_at": [0, 1, 0], "fov": 40,
+		 "refs": ["docs/refs/hero-character.png"], "judge": "scale next to the 1.8 m reference, silhouette, materials, rim separation"},
+		{"name": "shot-03-small-prop", "scene": "res://scenes/style_slice.tscn", "pos": [1.5, 1.2, 1.5], "look_at": [0, 0.3, 0], "fov": 35,
+		 "refs": ["docs/refs/small-prop.png"], "judge": "texel density, roughness response, edge wear, cohesion with neighbours"},
+		{"name": "shot-04-building", "scene": "res://scenes/style_slice.tscn", "pos": [10, 1.7, 14], "look_at": [0, 4, 0], "fov": 55,
+		 "refs": ["docs/refs/building.png"], "judge": "modular seams, trim sheet scale, decals, door vs reference height"},
+		{"name": "shot-05-ground-low", "scene": "res://scenes/style_slice.tscn", "pos": [3, 0.4, 3], "look_at": [0, 0.3, -6], "fov": 50,
+		 "refs": ["docs/refs/terrain.png", "docs/refs/foliage.png"], "judge": "ground blend, secondary detail, contact shadows, no seams"},
+		{"name": "shot-06-backlit", "scene": "res://scenes/style_slice.tscn", "pos": [-12, 2, -12], "look_at": [0, 3, 0], "fov": 50,
+		 "refs": ["docs/refs/lighting-mood.png"], "judge": "into the key light: rim and translucency, haze, bloom threshold, no black shadows"},
+		{"name": "shot-07-distance", "scene": "res://scenes/style_slice.tscn", "pos": [40, 15, 40], "look_at": [0, 0, 0], "fov": 60,
+		 "refs": ["docs/refs/foliage.png", "docs/refs/terrain.png"], "judge": "tiling at distance, aerial perspective, silhouettes against sky"},
+		{"name": "shot-08-ui-over-play", "scene": "res://scenes/main.tscn", "pos": [8, 8, 8], "look_at": [0, 0, 0], "fov": 50,
+		 "refs": ["docs/refs/ui.png"], "judge": "UI palette and type vs ref, legibility over the busiest background"}
+	]
+}

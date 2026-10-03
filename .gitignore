@@ -1,0 +1,15 @@
+build/
+dist/
+.verify/
+.godot/
+__pycache__/
+.claude/HALT
+.claude/run-state/continues.txt
+.claude/run-state/reviews/*.pending
+.claude/settings.local.json
+docs/shots/_work/
+.claude/run-state/heartbeat.json
+.claude/run-state/heartbeat.lock
+.claude/run-state/*.tmp
+.claude/run-state/session.json
+.claude/run-state/resume.log

@@ -1,0 +1,39 @@
+{
+	"project": "PROJECT_NAME",
+	"run": "r1",
+	"max_continues": 300,
+	"review_timeout_min": 25,
+	"plan_file": "PLAN.md",
+	"open_phase_regex": "^- \\[ \\] \\*\\*(P\\d+[^*]*)\\*\\*",
+	"allowed_delete_roots": [".", "build", "dist", ".verify"],
+	"heartbeat": true,
+	"heartbeat_min": 10,
+	"heartbeat_branch": "",
+	"stall_min": {"default": 30, "phases": {}},
+	"visual": {
+		"required": false,
+		"art_bible": "ART-BIBLE.md",
+		"refs_dir": "docs/refs",
+		"shot_set": "docs/shots/shots.json",
+		"shots_dir": "docs/shots",
+		"lock_phase": "P1",
+		"review_caps": {"stage_a": 3, "default": 6, "phases": {}},
+		"on_cap": "proceed_with_known_issues",
+		"rubric_min_score": 4,
+		"stage_a_min_score": 4,
+		"rubric": ["silhouette", "depth", "light", "palette", "cohesion", "secondary_detail", "ground", "life"],
+		"stage_a_items": ["silhouette", "depth", "light", "palette"],
+		"perf": {"min_avg_fps": 60, "min_low1_fps": 30},
+		"style_reference": "docs/style_reference"
+	},
+	"paid_services": {
+		"meshy": {
+			"cap": 250,
+			"binaries": ["meshy"],
+			"balance_cmd": "meshy balance",
+			"balance_regex": "\"balance\"\\s*:\\s*(\\d+)",
+			"estimate_regex": "(\\d+)\\s*credits",
+			"notes": "Run 2 costs: concept image 9, image-to-3d 30, rigging 5, clip 3, rigged character ~50."
+		}
+	}
+}
