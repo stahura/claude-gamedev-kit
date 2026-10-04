@@ -1,6 +1,6 @@
 ---
 name: run-protocol
-description: How to execute an unattended, multi-phase run from BRIEF.md and PLAN.md - art bible gate, phase loop, style slice and look-and-fix on visual phases with per-stage review caps (below bar never halts the run), independent visual review that scores first and then sees the previous round, style lock, reviews with timeouts, merge/tag/release per phase, progress logging, paid-API spend, headless runs, and the final run report. Load at the start of every unattended run and after every context compaction.
+description: How to execute an unattended, multi-phase run from BRIEF.md and PLAN.md - art bible gate, phase loop, style slice (dress and frame before shader tuning) and look-and-fix on visual phases with per-stage review caps (below bar never halts the run), independent visual review that calibrates on the reference, scores blind and then sees the previous round, style lock, reviews with timeouts, merge/tag/release per phase, progress logging, paid-API spend, headless runs, the final run report and the close-out. Load at the start of every unattended run and after every context compaction.
 ---
 # Run protocol (unattended)
 
@@ -45,8 +45,13 @@ PROGRESS.md, keep going. The Stop hook keeps you working while PLAN.md has open 
    (performance is this automated check, not the reviewer's). A screenshot existing is not a pass, and you never pass
    your own work: only the visual-reviewer does.
 4. Style slice (P1):
-   - **Stage A** (`P1-visualA-r<N>`, max `review_caps.stage_a` reviewed rounds, default 3): light a **small dressed
-     patch** (one real rock, a few grass cards, the real ground material where cheap) rather than pure placeholders,
+   - **Dress and frame before shader tuning.** Scene dressing (vegetation, props, outcrops at the reference's density)
+     and the painterly/base surface come before tuning the core asset's shader; frame the hero shot on the subject
+     before the lighting lock freezes the shot set. A shader stage judged in an under-dressed frame is polished
+     against the wrong target (r2: six water rounds on a ~60 % bare frame; external stylization stayed 2-3). Put the
+     ref and the hero side by side at the same size in round 1.
+   - **Stage A** (`P1-visualA-r<N>`, max `review_caps.stage_a` reviewed rounds, default 3): light the **dressed,
+     framed area** (real rocks, grass and flower clumps, the real ground material) rather than pure placeholders,
      so the reviewer judges lighting on believable surfaces; the stage scores only `visual.stage_a_items` (keep them
      to lighting/palette-type items) against `visual.stage_a_min_score`. On a pass, or when stage A reaches its cap,
      tag `<run>-lighting-lock` (the shot set is frozen from there: `art_gate.py` fails on any change) and go on.
@@ -94,7 +99,10 @@ PROGRESS.md, keep going. The Stop hook keeps you working while PLAN.md has open 
   snapshots `final/` into `docs/shots/<run>/<phase>/rounds/<id>/` and prints the **reviewer brief** (this round's
   folder and the previous round's folder; also saved as `review-brief.md` there). The previous round's top problems
   and findings, without its scores, go to `rounds/<id>/previous-round.md`, which the reviewer opens only after it has
-  scored this round (no anchoring on old numbers). Give the reviewer that brief verbatim plus the shot-set version and
+  scored this round and written its blind scores (no anchoring on old numbers; the comparison never raises a score).
+  The reviewer calibrates on the reference first (scores the ref, judges each shot's whole-frame style and density;
+  a mismatch caps the style item, `kit.json` `visual.calibration`). An in-run pass on the final stage is
+  provisional until the close-out's external blind score. Give the reviewer that brief verbatim plus the shot-set version and
   the stage. No code, diffs, `critique.md`, scores (yours or earlier rounds') or hints about the verdict. It compares
   every shot with the previous round and must not reverse its own earlier requests without saying why.
 - **Its verdict is captured by the SubagentStop hook** into `.claude/run-state/reviews/<id>.json`, from its last
@@ -146,5 +154,18 @@ usage tool if available), wall time from git, Stop-hook continues (`.claude/run-
 reviews and outcomes, **every `done_below_bar` phase with its last scores, rounds and known issues** (from
 run-state.json), spend ledger, denied/blocked commands (`.claude/run-state/denied.jsonl`, hook denies in
 `hooks.log.jsonl`), known issues, and **change next time**. Then run `python tools/review.py headline`: it puts the
-below-bar `headline` and `below_bar` first in `run-report.json`; start `RUN-REPORT.md` with the same headline. Merge,
-tag, release, push.
+below-bar `headline` and `below_bar` first in `run-report.json`; start `RUN-REPORT.md` with the same headline. The
+headline and the report lead with the **last stage's open issues** and, for visual runs, **the composition gap vs the
+reference** (style/density, framing); never with stale stage-A problems a later stage superseded. Merge, tag,
+release, push.
+
+## 8. Close-out (after the run, same session)
+The owner resumes this session (`tools/headless/resume.sh --prompt "<lessons task>"`) for the close-out
+(`docs/close-out.md`): (a) asset recipe -> `docs/RECIPE.md` (general recipe + per-style presets with the starting
+values that passed), (b) kit-wide pitfalls, (c) reviewer rubric fixes, (d) wasted-token report with rounds-to-pass
+per stage and tokens/cost from the stream-json `modelUsage` as the baseline. Write `LESSONS.md` from
+`templates/LESSONS.md` with before/after image pairs. The **external blind score is mandatory**: by default a fresh
+Claude Code session (not this one) that sees only the refs, the final shots and the rubric (no run history, no
+reviews, no report) scores every shot; a human or Grok Bot reviewer spot-checks its scores rather than scoring
+themselves. Record it next to the in-run scores; open kit PRs for (b) and (c). The next brief starts from the recipe values and measures rounds-to-pass and tokens
+against this baseline.

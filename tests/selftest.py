@@ -268,6 +268,15 @@ def main() -> int:
                vis0["review_caps"].get("default") == 6 and vis0.get("on_cap") == "proceed_with_known_issues",
                "kit.json template: review_caps 3/6 and on_cap replace look_fix_max_iterations")
         ok(vis0.get("rubric_min_score") in (1, 2, 3, 4, 5), "kit.json visual.rubric_min_score is 1-5")
+        ok(not kitlib.calibration_config_problems(kitcfg) and
+           (not (vis0.get("calibration") or {}).get("required") or vis0["calibration"].get("cap_item") in vis0["rubric"]),
+           "kit.json: visual.calibration.cap_item %r is an item of visual.rubric (else a mismatch caps nothing)"
+           % (vis0.get("calibration") or {}).get("cap_item"))
+        if kitcfg.get("project") == "PROJECT_NAME":
+            ok("style_match" in vis0["rubric"] and "cohesion" in vis0["rubric"] and
+               vis0.get("calibration", {}).get("cap_item") == "style_match" and
+               vis0["rubric"] == kitlib.DEFAULT_RUBRIC,
+               "kit.json template: style_match in the default rubric and the default cap_item (cohesion kept)")
         ok(set(vis0.get("perf") or {}) >= {"min_avg_fps", "min_low1_fps"}, "kit.json visual.perf has the fps thresholds")
         tpl = open(os.path.join(root, "templates", "ART-BIBLE.md"), encoding="utf-8").read()
         ok(all("\n## %s\n" % s in tpl for s in art_gate.SECTIONS), "art bible template has every required section")
@@ -349,6 +358,13 @@ def main() -> int:
         # --- visual reviews: captured by the SubagentStop hook, validated, never self-supplied ---
         cfg["visual"] = dict(vis0, required=True)
         cfg["visual"].pop("stage_a_min_score", None)
+        if all((vis0.get("perf") or {}).get(k) is None for k in ("min_avg_fps", "min_low1_fps")):
+            # a project that defers the perf gate (null thresholds) still exercises it with the template thresholds
+            cfg["visual"]["perf"] = {"min_avg_fps": 60, "min_low1_fps": 30}
+        # calibration against the reference: required, capping the project's style item (else the template's)
+        cal_item = next((i for i in ((vis0.get("calibration") or {}).get("cap_item"), "stylization", "cohesion")
+                         if i in vis0["rubric"]), vis0["rubric"][-1])
+        cfg["visual"]["calibration"] = {"required": True, "cap_item": cal_item, "cap": 3}
         json.dump(cfg, open(cfg_path, "w", encoding="utf-8"))
         os.makedirs(os.path.join(root, "docs", "shots"), exist_ok=True)
         shutil.copy(os.path.join(root, "templates", "shots.json"), os.path.join(root, "docs", "shots", "shots.json"))
@@ -368,7 +384,8 @@ def main() -> int:
 
         def full(verdict="pass", score=4, rid="P1-visual-r1", **extra) -> dict:
             v = {"review_id": rid, "verdict": verdict, "findings": [], "shot_set_version": shots["version"],
-                 "scores": {n: {i: score for i in items} for n in names}}
+                 "scores": {n: {i: score for i in items} for n in names},
+                 "calibration": {"reference": {i: 5 for i in items}, "shots": {n: "match: same density" for n in names}}}
             v.update(extra)
             return v
 
@@ -390,7 +407,7 @@ def main() -> int:
             json.dump(rs0, open(os.path.join(root, "run-state.json"), "w", encoding="utf-8"))
 
         def capture(v: dict, reads=None, active=False, agent="visual-reviewer", start=True, keep=False, mode="text",
-                    extra_reads=(), folder=None, rid=None):
+                    extra_reads=(), folder=None, rid=None, blind=None):
             rid = rid or v.get("review_id", "none")
             if start:
                 forget(rid)
@@ -400,7 +417,14 @@ def main() -> int:
             with open(tr, "w", encoding="utf-8") as f:
                 f.write(json.dumps({"type": "user", "message": {"role": "user", "content":
                                     "Review id %s. Shots: docs/shots/r1/P1/rounds/%s/" % (rid, rid)}}) + "\n")
-                for p in [os.path.join(folder or final, n + ".png") for n in (names if reads is None else reads)] + list(extra_reads):
+                cur = [os.path.join(folder or final, n + ".png") for n in (names if reads is None else reads)]
+                for p in cur + ["BLIND"] + list(extra_reads):
+                    if p == "BLIND":   # blind scores, written before the first look at the previous round
+                        if blind is not None:
+                            f.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+                                {"type": "text", "text": "Blind scores.\n```json\n%s\n```\n" % json.dumps(
+                                    {"blind_scores": blind})}]}}) + "\n")
+                        continue
                     f.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
                         {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": p}}]}}) + "\n")
                 if mode == "text":
@@ -462,6 +486,34 @@ def main() -> int:
         ok(rejected(capture(full(score=3))), "capture: pass with a score below the minimum rejected")
         ok(rejected(capture(full(incomplete=True))), "capture: incomplete pass rejected")
         ok(capture(full("fix_needed", 3))[1] is not None, "capture: fix_needed with low scores stored")
+        v = full()
+        del v["calibration"]
+        ok(rejected(capture(v)), "calibration: a verdict without the reference calibration is rejected (required)")
+        v = full("fix_needed", 4)
+        v["calibration"]["shots"][names[0]] = "mismatch: bare lawn vs the dense ref"
+        ok(rejected(capture(v)), "calibration: a style/density mismatch caps %s at 3 (4 rejected)" % cal_item)
+        v["scores"][names[0]][cal_item] = 3
+        ok(capture(v)[1] is not None, "calibration: mismatch with %s at the cap is stored" % cal_item)
+        v = full()
+        del v["calibration"]["shots"][names[-1]]
+        ok(rejected(capture(v)), "calibration: every shot needs a style/density judgement vs the reference")
+        # cap_item outside the rubric: fail loudly (review.py start refuses, the verdict check reports it), never a no-op
+        bad_cfg = json.loads(json.dumps(cfg))
+        bad_cfg["visual"]["calibration"]["cap_item"] = "no_such_item"
+        ok(any("not an item of visual.rubric" in e for e in kitlib.calibration_problems(full(), bad_cfg, names)) and
+           any("not an item of visual.rubric" in e for e in kitlib.validate_verdict(full(), "P1-visual-r1", bad_cfg)),
+           "calibration: a cap_item that is not a rubric item is an error in the verdict check, not a silent skip")
+        forget("P1-visual-r1")
+        json.dump(bad_cfg, open(cfg_path, "w", encoding="utf-8"))
+        r = tool(root, "review.py", "start", "P1-visual-r1")
+        ok(r.returncode == 2 and "START REFUSED" in r.stdout and "no_such_item" in r.stdout and
+           "not an item of visual.rubric" in r.stdout and not os.path.exists(os.path.join(revdir, "P1-visual-r1.pending")),
+           "review.py start: refused while visual.calibration.cap_item is not a rubric item: " + r.stdout)
+        json.dump(cfg, open(cfg_path, "w", encoding="utf-8"))
+        r = tool(root, "review.py", "start", "P1-visual-r1")
+        ok(r.returncode == 0 and os.path.exists(os.path.join(revdir, "P1-visual-r1.pending")),
+           "review.py start: starts with a cap_item that is a rubric item (%s)" % cal_item)
+        forget("P1-visual-r1")
         ok(rejected(capture(full(), reads=names[:-1])), "capture: reviewer that did not open every shot PNG rejected")
         ok(rejected(capture(full(), start=False)), "capture: review not started with review.py start rejected")
         ok(rejected(capture(full(rid="P1-ux-r1"))), "capture: non-visual review id rejected")
@@ -528,9 +580,12 @@ def main() -> int:
         ok(r.returncode == 0 and all(os.path.exists(os.path.join(rounds, "P1-visual-r1", n + ".png")) for n in names) and
            "rounds/P1-visual-r1/" in r.stdout and "Previous round: none" in r.stdout,
            "review.py start: snapshots final/ into rounds/<id>/ and prints the brief (first round)")
+        # score mentions use this project's rubric item names (the scrubber reads kit.json visual.rubric), in both the
+        # spaced and the key spelling, so the check also holds in a project with its own rubric
+        i0, i1 = items[0].replace("_", " "), items[1]
         capture(full("fix_needed", 3, findings=[{"id": "V-1", "severity": "high", "blocking": True,
-                                                  "scenario": "fog too dense, depth 2", "fix": "density 0.02"}],
-                     top_problems=["shot-01: fog too dense (depth 3, light=2, 2/5)"]), start=False, keep=True)
+                                                  "scenario": "fog too dense, %s 2" % i0, "fix": "density 0.02"}],
+                     top_problems=["shot-01: fog too dense (%s 3, %s=2, 2/5)" % (i0, i1)]), start=False, keep=True)
         r = tool(root, "review.py", "start", "P1-visual-r2")
         brief = os.path.join(rounds, "P1-visual-r2", "review-brief.md")
         notes_p = os.path.join(rounds, "P1-visual-r2", "previous-round.md")
@@ -540,12 +595,36 @@ def main() -> int:
            "Only then" in r.stdout, "review.py start: brief names the previous round's folder; its problems only in "
            "previous-round.md, opened after scoring: " + r.stdout)
         ok("fog too dense" in notes and "V-1" in notes and "vs_previous" in notes and
-           not any(x in notes for x in ('"%s": 3' % items[0], "depth 3", "depth 2", "light=2", "2/5", '"scores"')) and
+           not any(x in notes for x in ('"%s": 3' % items[0], "%s 3" % i0, "%s 2" % i0, "%s=2" % i1, "2/5",
+                                        '"scores"')) and
            not any(x in r.stdout for x in ('"%s": 3' % items[0], "Previous scores", '"scores"')),
            "anti-anchoring: previous-round.md has the top problems and findings, never the scores: " + notes)
         prev_reads = [os.path.join(rounds, "P1-visual-r1", n + ".png") for n in names]
+        pend2 = os.path.join(revdir, "P1-visual-r2.pending")
+        out, sv = capture(full("fix_needed", 3, rid="P1-visual-r2"), start=False, extra_reads=[notes_p] + prev_reads)
+        ok(rejected((out, sv)) and "blind scores" in out.get("reason", ""),
+           "blind vs_previous: opening previous-round.md before writing blind scores is rejected")
+        open(pend2, "w").close()
+        out, sv = capture(full("fix_needed", 3, rid="P1-visual-r2"), start=False, extra_reads=prev_reads,
+                          blind=full("fix_needed", 2)["scores"])
+        ok(rejected((out, sv)) and "never raise" in out.get("reason", ""),
+           "blind vs_previous: a final score above the blind score is rejected (comparison never raises a score)")
+        open(pend2, "w").close()
+        part = full("fix_needed", 3)["scores"]
+        del part[names[-1]][items[-1]]
+        out, sv = capture(full("fix_needed", 3, rid="P1-visual-r2"), start=False, extra_reads=prev_reads, blind=part)
+        ok(rejected((out, sv)) and "every shot x item" in out.get("reason", "") and
+           "%s %s" % (names[-1], items[-1]) in out.get("reason", ""),
+           "blind vs_previous: a blind block missing a cell is rejected (no cell escapes the never-raise check)")
+        open(pend2, "w").close()
+        part = full("fix_needed", 3)["scores"]
+        del part[names[0]]
+        out, sv = capture(full("fix_needed", 3, rid="P1-visual-r2"), start=False, extra_reads=prev_reads, blind=part)
+        ok(rejected((out, sv)) and "every shot x item" in out.get("reason", ""),
+           "blind vs_previous: a blind block missing a whole shot is rejected")
+        open(pend2, "w").close()
         out, sv = capture(full("fix_needed", 3, rid="P1-visual-r2", vs_previous={names[0]: "better: fog lifted"}),
-                          start=False, keep=True, extra_reads=prev_reads)
+                          start=False, keep=True, extra_reads=[notes_p] + prev_reads, blind=full("fix_needed", 3)["scores"])
         ok(sv and sv["shots_folder"].endswith("/final") and sv.get("vs_previous"),
            "capture: reviewer that also opened the previous round's PNGs is stored (current folder, vs_previous kept)")
         tool(root, "review.py", "start", "P1-visual-r3")
@@ -557,7 +636,8 @@ def main() -> int:
            "review.py start: a round number is never reused (r3 again refused, r4 is next)")
         tool(root, "review.py", "start", "P1-visual-r4")
         out, sv = capture(full("fix_needed", 3, rid="P1-visual-r4"), start=False, keep=True,
-                          folder=os.path.join(rounds, "P1-visual-r4"), extra_reads=prev_reads)
+                          folder=os.path.join(rounds, "P1-visual-r4"), extra_reads=prev_reads,
+                          blind=full("fix_needed", 3)["scores"])
         ok(sv and sv["shots_folder"].endswith("rounds/p1-visual-r4"), "capture: this round's snapshot folder counts")
         r = tool(root, "review.py", "start", "P1-visual-r5")
         ok(r.returncode == 0 and "rounds/P1-visual-r4/" in r.stdout and "none stored" not in open(os.path.join(
@@ -656,6 +736,10 @@ def main() -> int:
            "close --known-issues: [x] (below bar), run-state done_below_bar with known issues, last scores, rounds")
         ok(json.load(open(os.path.join(revdir, "P1-visual-r2.json"), encoding="utf-8"))["verdict"] == "fix_needed",
            "close --known-issues: honest scores, the stored verdict is never turned into a pass")
+        h = tool(root, "review.py", "headline").stdout
+        ok(h.startswith("BELOW BAR") and "grey clouds" in h and "murky bank" not in h and "flat light" not in h and
+           "composition/style gap vs the reference" in h and cal_item in h,
+           "headline: leads with the main stage's open problems and the composition gap, never stale stage-A ones: " + h)
         out = hook(root, "stop_guard.py", {})
         ok(out.get("decision") == "block" and "Open phase: P2" in out.get("reason", "") and "close check" not in out["reason"],
            "stop: a below-bar style slice passes the close check; the run continues with P2")
@@ -1141,7 +1225,58 @@ def main() -> int:
             ok("pid=$CPID" in rs_l and "resume.sh" in rs_l and "--permission-mode bypassPermissions" not in rs_l and
                "Start-Process" in open(os.path.join(root, "tools", "headless", "launch.ps1"), encoding="utf-8").read(),
                "launchers record the claude pid in session.json and point to resume.sh")
+
+            # --- scripts/run-loop.sh: launch/resume/watch decision over the kit's own tools ---
+            loop = os.path.join(root, "scripts", "run-loop.sh")
+            r = subprocess.run([bash, "-n", loop], capture_output=True, text=True)
+            ok(r.returncode == 0, "bash -n scripts/run-loop.sh (%s)" % r.stderr.strip())
+            lsrc = open(loop, encoding="utf-8").read()
+            ok(all(s in lsrc for s in ("tools/headless/launch.sh", "tools/headless/resume.sh", "tools/watch/run_watch.sh"))
+               and "--permission-mode" not in lsrc and "claude -p" not in lsrc,
+               "run-loop.sh drives launch/resume/watch and never calls claude itself (no bypass possible)")
+            rloop = lambda *a: subprocess.run([bash, loop, "--repo", "o/fake", "--branch", "r1-run", "--python", sys.executable] + list(a),
+                                              capture_output=True, text=True, cwd=root, timeout=60)
+            r = rloop("--dry-run")
+            ok(r.returncode == 0 and "start=resume" in r.stdout,
+               "run-loop: a dead recorded session of an unfinished run is resumed, not relaunched: " + r.stdout + r.stderr)
+            rsp = os.path.join(root, "run-state.json")
+            rs_keep = open(rsp, encoding="utf-8").read()
+            with open(rsp, "w", encoding="utf-8") as f:
+                json.dump({"run": "r1", "status": "done"}, f)
+            r = rloop()
+            ok(r.returncode == 2 and "--new-run" in r.stderr,
+               "run-loop: refuses to launch over a finished run-state.json without --new-run: " + r.stderr)
+            with open(rsp, "w", encoding="utf-8") as f:
+                f.write(rs_keep)
             os.remove(os.path.join(root, ".claude", "run-state", "session.json"))
+            lr = os.path.join(tmp, "launch-repo")
+            os.makedirs(os.path.join(lr, "tools", "headless"))
+            os.makedirs(os.path.join(lr, ".claude"))
+            shutil.copy(os.path.join(root, "tools", "headless", "launch.sh"), os.path.join(lr, "tools", "headless"))
+            shutil.copy(os.path.join(root, ".claude", "settings.json"), os.path.join(lr, ".claude"))
+            git(lr, "init", "-q", "-b", "r1-run")
+            git(lr, "add", "-A")
+            git(lr, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+
+            def launch(*a: str) -> subprocess.CompletedProcess:
+                return subprocess.run([bash, os.path.join(lr, "tools", "headless", "launch.sh"), "--python", sys.executable,
+                                       "--skip-selftest", "--dry-run"] + list(a), capture_output=True, text=True, cwd=lr,
+                                      env=dict(os.environ, HOME=home), timeout=60)
+            pre = "0f1e2d3c-4b5a-4968-8776-655443322110"
+            r = launch("--session-id", pre.upper())
+            ok(r.returncode == 0 and "session %s on r1-run" % pre in r.stderr and "%s.jsonl" % pre in r.stderr and
+               "build/headless/%s.stream.jsonl" % pre in r.stderr and "--session-id %s" % pre in r.stdout,
+               "launch.sh --session-id: the pre-assigned id (normalised) names the session, log, stream and claude "
+               "--session-id: " + r.stderr + r.stdout)
+            r = launch("--session-id", "not-a-uuid")
+            ok(r.returncode == 2 and "must be a UUID" in r.stderr and "would run" not in r.stdout,
+               "launch.sh --session-id: an invalid id is refused before launch")
+            r = launch()
+            ok(r.returncode == 0 and pre not in r.stderr and
+               len(r.stderr.split("session ", 1)[-1].split(" ", 1)[0]) == 36,
+               "launch.sh without --session-id: a fresh uuid4")
+            ok("-SessionId" in open(os.path.join(root, "tools", "headless", "launch.ps1"), encoding="utf-8").read(),
+               "launch.ps1 takes -SessionId")
         else:
             ok(True, "watcher/launcher bash checks skipped (no bash on this OS)")
 

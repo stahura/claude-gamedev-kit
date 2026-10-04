@@ -13,3 +13,5 @@ docs/shots/_work/
 .claude/run-state/*.tmp
 .claude/run-state/session.json
 .claude/run-state/resume.log
+.claude/run-state/run-loop.log
+.claude/run-state/run-loop.out

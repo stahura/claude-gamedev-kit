@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # launch.sh: start an unattended headless Claude Code run in this repo (Linux/macOS/Git Bash). See docs/headless.md.
 #
-#   tools/headless/launch.sh --branch <run-branch> [--prompt "<handoff line>"] [--python python3] [--skip-selftest]
-#                            [--dry-run]
+#   tools/headless/launch.sh --branch <run-branch> [--prompt "<handoff line>"] [--session-id <uuid>] [--python python3]
+#                            [--skip-selftest] [--dry-run]
 #
 # Checks the pre-launch list (run branch checked out, .claude/settings.json committed, auth, folder trust, selftest),
-# refuses while the session in .claude/run-state/session.json is still alive (use resume.sh), generates the session id,
+# refuses while the session in .claude/run-state/session.json is still alive (use resume.sh), takes the session id from
+# --session-id (pre-assigned by the operator, e.g. to start a watcher first; must be a UUID) or generates a uuid4,
 # prints the resume command, then runs
 #   claude -p "<handoff line>" --permission-mode acceptEdits --session-id <id> --output-format stream-json --verbose
 # with KIT_HEADLESS=1 (the PermissionRequest hook denies and logs anything off the allowlist) and writes
@@ -14,15 +15,16 @@
 # .claude/run-state/denied.jsonl. Never bypassPermissions / --dangerously-skip-permissions.
 set -u
 
-BRANCH="" PROMPT="" PY="" SKIP_SELFTEST=0 DRY=0
+BRANCH="" PROMPT="" PY="" SID="" SKIP_SELFTEST=0 DRY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --branch) BRANCH=${2-}; shift 2 ;;
         --prompt) PROMPT=${2-}; shift 2 ;;
         --python) PY=${2-}; shift 2 ;;
+        --session-id) SID=${2-}; shift 2 ;;
         --skip-selftest) SKIP_SELFTEST=1; shift ;;
         --dry-run) DRY=1; shift ;;
-        -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
         *) echo "launch: unknown argument $1" >&2; exit 2 ;;
     esac
 done
@@ -36,6 +38,13 @@ if [ -z "$PY" ]; then
     if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
 fi
 command -v "$PY" >/dev/null 2>&1 || die "$PY not found"
+if [ -n "$SID" ]; then
+    SID=$("$PY" -c 'import sys,uuid; print(uuid.UUID(sys.argv[1]))' "$SID" 2>/dev/null) &&
+        [[ $SID =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+        die "--session-id must be a UUID (e.g. $("$PY" -c 'import uuid; print(uuid.uuid4())'))"
+else
+    SID=$("$PY" -c 'import uuid; print(uuid.uuid4())')
+fi
 command -v git >/dev/null 2>&1 || die "git not found"
 command -v claude >/dev/null 2>&1 || [ "$DRY" = 1 ] || die "claude CLI not found"
 
@@ -58,7 +67,6 @@ fi
 
 ORIGIN=$(git remote get-url origin 2>/dev/null | sed -E 's#(\.git)?$##; s#.*[:/]([^/:]+/[^/]+)$#\1#')
 [ -n "$PROMPT" ] || PROMPT="Read BRIEF.md in ${ORIGIN:-this repo} on branch $BRANCH; run it unattended per the run-protocol skill; report via run-report.json."
-SID=$("$PY" -c 'import uuid; print(uuid.uuid4())')
 SLUG=$(printf '%s' "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')
 LOGP="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$SLUG/$SID.jsonl"
 HEAD=$(git rev-parse HEAD)

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Renders the fixed shot set (docs/shots/shots.json, see docs/visual-pipeline.md) to one PNG per shot. Needs a
-## window or a GPU (not --headless, which renders nothing); always pass --quit-after as a failsafe, and --fixed-fps 60
+## window, GPU or software Vulkan (not --headless, which renders nothing); always pass --quit-after as a failsafe, and --fixed-fps 60
 ## so shader TIME (wind, water) advances the same per frame on every run:
 ##   godot_console --path . --resolution 1920x1080 --fixed-fps 60 --quit-after 20000 -s res://tools/render_shots.gd -- --out=docs/shots/_work/r1/P1/i1 [--set=res://docs/shots/shots.json] [--only=shot-01-x,shot-02-y]
 ## Repeatable: the global RNG is seeded per shot (set "seed", default 1) before the scene loads; after settle_frames the
@@ -9,7 +9,10 @@ extends SceneTree
 ## Prints SHOT lines.
 ## Benchmark (no PNGs): -- --bench=600 [--bench-shot=shot-01-wide] holds the shot's camera with vsync off and prints
 ##   BENCH avg_fps=<x> low1_fps=<y> frames=<n>   (check it with python tools/perf_gate.py --phase P<N> <log>)
-## Tested with Godot 4.7.2 (Forward+, Vulkan, Windows GPU window).
+## Tested with Godot 4.7.2 (Forward+, Vulkan): Windows GPU window, and Linux without a GPU on Mesa lavapipe (matches the GPU
+## render, < 1/255 mean abs diff):
+##   xvfb-run -a -s "-screen 0 2560x1440x24" godot --path . --rendering-driver vulkan --rendering-method forward_plus --resolution 1920x1080 --fixed-fps 60 --quit-after 20000 -s res://tools/render_shots.gd -- --out=<dir>
+## Not gl_compatibility (looks different); --bench fps are only meaningful on a GPU.
 
 func _initialize() -> void:
 	_run.call_deferred()

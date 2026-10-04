@@ -148,7 +148,42 @@
         "array",
         "string"
       ],
-      "description": "visual-reviewer: per shot better|same|worse vs the previous round, with why; says so explicitly when it reverses an earlier request"
+      "description": "visual-reviewer: per shot better|same|worse vs the previous round, with why and what still separates it from the reference; written only after the blind scores block ({\"blind_scores\": {shot: {item: n}}} in an earlier message, before opening the previous round). It can lower a blind score, never raise one (the SubagentStop hook checks both); says so explicitly when it reverses an earlier request"
+    },
+    "calibration": {
+      "type": "object",
+      "description": "visual-reviewer: written before scoring the shots. reference = the reference image scored on the rubric (item -> 1-5); shots = shot -> 'match: why' | 'mismatch: why' for overall style and scene density/composition vs the ref. A mismatch caps kit.json visual.calibration.cap_item at visual.calibration.cap (default 3); required when visual.calibration.required (kitlib.calibration_problems)",
+      "properties": {
+        "reference": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "shots": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^([Mm]atch|[Mm]ismatch)"
+          }
+        }
+      }
+    },
+    "distance_to_ref": {
+      "type": [
+        "object",
+        "string"
+      ],
+      "description": "visual-reviewer: per shot, what is still missing versus the reference (written with the blind scores; optional)"
     }
   }
 }

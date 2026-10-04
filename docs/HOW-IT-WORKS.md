@@ -206,17 +206,23 @@ What each part does, with the file that does it:
 - **Shot set.** A fixed list of camera positions (`docs/shots/shots.json`) rendered to images the same way every time,
   so screenshots from different rounds can be compared fairly.
 - **Style slice.** Before building lots of content, the first phase builds one small scene (about 60 x 60 metres) that
-  must already look right. Lighting is set first on a small patch with a few real surfaces; the main asset is
-  prototyped on the side at the same time. When the slice passes, the look is *locked*: its screenshots go to
+  must already look right. First the main shot is framed and the scene is dressed (plants, props, rocks, the base
+  surface) to the density of the reference images, then the lighting is set on that dressed area; the main asset is
+  prototyped on the side at the same time. Tuning the main asset in a half-empty scene polishes it against the wrong
+  target. When the slice passes, the look is *locked*: its screenshots go to
   `docs/style_reference/` and all later work must match them.
 - **Look-and-fix.** Render the shots, compare them with the references, change one thing at a time, and keep the
   change only if it is clearly better.
 - **Screenshot-only reviewer.** The `visual-reviewer` subagent (*subagent*: a separate Claude helper with its own
   narrow instructions, in `.claude/agents/`) acts as an art director. It sees only the screenshots, the art bible, the
-  references and the scoring list, never the code. It scores every shot from 1 to 5 on eight points (silhouette,
-  depth, light, palette, cohesion, secondary detail, ground, life); a shot passes at 4 or more on every point. It
-  scores first and only then looks at the previous round, so old numbers do not sway it. The builder never passes its
-  own work. Two more subagents review the plan (`plan-critic`) and the code (`adversarial-reviewer`).
+  references and the scoring list, never the code. Before scoring it *calibrates*: it scores the reference image
+  itself, then says for each shot whether the whole frame matches the reference's style and density; a mismatch caps
+  the style score at 3 however good the details are. It then scores every shot from 1 to 5 on nine points
+  (silhouette, depth, light, palette, cohesion, style match, secondary detail, ground, life); a shot passes at 4 or
+  more on every point. It writes these scores down before it looks at the previous round, and the comparison can only
+  lower a score, never raise it, so "better than last time" cannot pass a shot. A hook rejects verdicts that break
+  these rules. An in-run pass is confirmed by an outside blind score at the end of the run. The builder never passes
+  its own work. Two more subagents review the plan (`plan-critic`) and the code (`adversarial-reviewer`).
 - **Review limits that never dead-end.** Each stage gets a limited number of review rounds (3 for lighting, 6 for the
   main stage by default, in `kit.json`). If a stage uses them all without passing, the phase closes "below bar" with
   honest scores and known issues, and the run carries on. A missed bar never stops the whole run.
@@ -233,12 +239,18 @@ What each part does, with the file that does it:
   that would go over the cap in `kit.json` and keeps a spending log.
 - **Headless launch and resume.** `tools/headless/launch.sh --branch <run-branch>` starts an unattended run
   (`launch.ps1` on Windows); `tools/headless/resume.sh` continues a stalled one, stopping the old process first so two
-  sessions never run at once. Details in [headless.md](headless.md).
+  sessions never run at once. `scripts/run-loop.sh --tmux <name>` does it all in one unattended loop: it launches the
+  run, watches it, resumes it on a stall (up to 5 times, then marks it blocked) and, when it ends, runs the close-out.
+  Details in [headless.md](headless.md).
 - **Watcher.** `tools/watch/run_watch.sh --repo <owner>/<repo> --branch <run-branch>` waits until the run finishes,
   stalls or is blocked, then prints one line of JSON. That is the signal for the engineering manager to read results
   or resume the run.
 - **Run report.** At the end the builder writes `run-report.json` and `RUN-REPORT.md`: what each phase achieved,
   reviews, phases below bar, spending, denied commands, known issues and "change next time".
+- **Close-out.** After every run the same session is resumed once to write `LESSONS.md` (from
+  `templates/LESSONS.md`): the values that worked, pitfalls, fixes to the reviewer's scoring, wasted rounds and tokens
+  as a baseline for the next run, and an outside blind score of the final shots. Details in
+  [close-out.md](close-out.md).
 
 The visual steps are explained in full in [visual-pipeline.md](visual-pipeline.md).
 
@@ -296,18 +308,19 @@ named `<run>-build`, so there is always a download of the latest working build.
    out; folder trust accepted; self-test OK.
 7. **Launch.** The handoff line, or `tools/headless/launch.sh --branch <run-branch>`, and the watcher started.
 8. **Plan.** Claude Code writes `PLAN.md`, the `plan-critic` checks it, and `tools/art_gate.py` must pass.
-9. **Style slice.** Lighting first, the main asset prototyped on the side, then one real asset of each kind, until the
+9. **Style slice.** Frame and dress the scene to the reference first, then lighting, the main asset prototyped on the
+   side, then one real asset of each kind, until the
    visual reviewer passes it or the review limit is reached. Then the look is locked.
 10. **Assets.** Characters and hero props: concept picture, Meshy, Blender cleanup, checked in the scene next to the
     other assets. Environments: modular Blender kits.
 11. **Content phases.** Each one built, tested, reviewed, merged, tagged and released before the next.
 12. **Stalls.** If the watcher reports a stall, the engineering manager resumes the same session with
-    `tools/headless/resume.sh`.
+    `tools/headless/resume.sh`; `scripts/run-loop.sh` does this automatically.
 13. **Run report and release.** Claude Code writes the report; the latest build is on the `<run>-build` release.
 14. **Review.** The engineering manager and reviewer check the report, screenshots and release against the brief; the
     chief of staff passes the result to the owner.
-15. **Lessons learned.** "Change next time" items go into the next brief, gotchas into `CLAUDE.md`, and general fixes
-    into the kit and the bots' skills.
+15. **Lessons learned.** The close-out writes `LESSONS.md`; "change next time" items go into the next brief, gotchas
+    into `CLAUDE.md`, and general fixes into the kit and the bots' skills.
 
 ## 6. What you need to set this up yourself
 

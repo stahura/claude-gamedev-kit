@@ -1,10 +1,10 @@
 # launch.ps1: start an unattended headless Claude Code run in this repo (Windows PowerShell). See docs/headless.md.
 #
 #   powershell -NoProfile -File tools/headless/launch.ps1 -Branch <run-branch> [-Prompt "<handoff line>"]
-#              [-Python python] [-SkipSelftest] [-DryRun]
+#              [-SessionId <uuid>] [-Python python] [-SkipSelftest] [-DryRun]
 #
-# Same steps as launch.sh: pre-launch checks, refuses while session.json's session is alive, session id, resume
-# command, then
+# Same steps as launch.sh: pre-launch checks, refuses while session.json's session is alive, session id (-SessionId,
+# validated as a UUID, else a new one), resume command, then
 #   claude -p "<handoff line>" --permission-mode acceptEdits --session-id <id> --output-format stream-json --verbose
 # with KIT_HEADLESS=1 (Start-Process, so the claude pid is recorded in .claude/run-state/session.json with the session
 # id, start time and branch; for a claude.cmd shim the recorded pid is the cmd.exe wrapper's); stream to
@@ -12,6 +12,7 @@
 param(
     [string]$Branch = "",
     [string]$Prompt = "",
+    [string]$SessionId = "",
     [string]$Python = "python",
     [switch]$SkipSelftest,
     [switch]$DryRun
@@ -23,6 +24,9 @@ function Warn($msg) { [Console]::Error.WriteLine("launch: WARNING: $msg") }
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $Root
 if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) { Die "$Python not found" }
+$Parsed = [guid]::Empty
+if ($SessionId -and -not [guid]::TryParseExact($SessionId, "D", [ref]$Parsed)) {
+    Die "-SessionId must be a UUID (e.g. $([guid]::NewGuid().ToString()))" }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Die "git not found" }
 if (-not $DryRun -and -not (Get-Command claude -ErrorAction SilentlyContinue)) { Die "claude CLI not found" }
 
@@ -46,7 +50,7 @@ if (-not $SkipSelftest) {
 $Origin = ((git remote get-url origin) -replace '\.git$', '') -replace '^.*[:/]([^/:]+/[^/]+)$', '$1'
 if (-not $Prompt) {
     $Prompt = "Read BRIEF.md in $Origin on branch $Branch; run it unattended per the run-protocol skill; report via run-report.json." }
-$Sid = [guid]::NewGuid().ToString()
+$Sid = if ($SessionId) { $Parsed.ToString() } else { [guid]::NewGuid().ToString() }
 $Slug = $Root -replace '[^A-Za-z0-9]', '-'
 $ConfigDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
 $LogP = Join-Path (Join-Path (Join-Path $ConfigDir "projects") $Slug) "$Sid.jsonl"

@@ -22,6 +22,9 @@
    other spelling of it) and do not retry it: stop that approach, log it in PROGRESS.md and report it in the run
    report. Headless runs deny anything off the allowlist and log it in `.claude/run-state/denied.jsonl`.
 <!-- kit:visual-rule -->
+- After the run: the owner resumes this same session for the close-out (`docs/close-out.md`): LESSONS.md, recipe,
+  pitfalls, reviewer fixes, the wasted-token report and baseline. The run report leads with the last stage's open
+  issues, never stale earlier-stage ones.
 
 ## When stuck
 Past 2x the phase estimate or the same failure 3 times: push to `<branch>-wip-p<N>`, restore code from the last green

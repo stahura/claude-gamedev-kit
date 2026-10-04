@@ -16,7 +16,8 @@ HOOK_LOG = os.path.join(STATE, "hooks.log.jsonl")
 
 # Visual review ids: <phase>-visualA-r<N> (stage A: lighting/placeholders) or <phase>-visual-r<N> (main asset stage).
 VISUAL_ID = re.compile(r"^(P\d+)-visual(A?)-r(\d+)$")
-DEFAULT_RUBRIC = ["silhouette", "depth", "light", "palette", "cohesion", "secondary_detail", "ground", "life"]
+DEFAULT_RUBRIC = ["silhouette", "depth", "light", "palette", "cohesion", "style_match", "secondary_detail", "ground",
+                  "life"]
 DEFAULT_STAGE_A = ["silhouette", "depth", "light", "palette"]
 DEFAULT_CAPS = {"stage_a": 3, "default": 6}
 # Rounds in a row of one stage that ended without a stored verdict (invalid, unreviewed, abandoned) before the run is
@@ -388,6 +389,59 @@ def shots_dir(cfg: dict, pid: str) -> str:
     return "/".join([base.rstrip("/"), cfg.get("run", "r1"), pid])
 
 
+def calibration_cfg(cfg: dict) -> dict:
+    """kit.json visual.calibration {required, cap_item, cap}: the reviewer scores the reference first and caps the
+    style item of every shot whose overall style or scene density does not match it. {} when not configured."""
+    c = visual(cfg).get("calibration")
+    if not isinstance(c, dict):
+        return {}
+    cap = c.get("cap", 3)
+    return {"required": bool(c.get("required")), "cap_item": str(c.get("cap_item") or ""),
+            "cap": cap if isinstance(cap, int) and not isinstance(cap, bool) else 3}
+
+
+def calibration_config_problems(cfg: dict) -> list:
+    """kit.json visual.calibration that cannot work: required (or a cap_item set) but cap_item is not an item of the
+    effective rubric, so a "mismatch" would cap nothing. `review.py start` refuses visual rounds on it."""
+    c = calibration_cfg(cfg)
+    if not c or not (c["required"] or c["cap_item"]):
+        return []
+    items = rubric(cfg)
+    if c["cap_item"] in items:
+        return []
+    return ["kit.json visual.calibration.cap_item %r is not an item of visual.rubric (%s): a style/density mismatch "
+            "would cap nothing. Set cap_item to the project's style item (e.g. \"style_match\" or \"stylization\")"
+            % (c["cap_item"], ", ".join(items))]
+
+
+def calibration_problems(v: dict, cfg: dict, names: list) -> list:
+    """Loose check of a visual verdict's "calibration" {"reference": {item: score}, "shots": {shot: "match: why" |
+    "mismatch: why"}}: present when required, a verdict per shot, and the cap on the style item of mismatched shots.
+    A cap_item outside the rubric is an error, never a silent no-op."""
+    c = calibration_cfg(cfg)
+    errs = calibration_config_problems(cfg)
+    cal = v.get("calibration")
+    if cal is None:
+        return errs + (["calibration missing: score the reference image itself on the rubric first, then judge each "
+                        "shot's overall style and scene density against it (\"calibration\": {\"reference\": {...}, "
+                        "\"shots\": {shot: \"match|mismatch: why\"}})"] if c.get("required") else [])
+    if not isinstance(cal, dict) or not isinstance(cal.get("shots", {}), dict):
+        return errs + ["calibration must be an object with \"reference\" (item -> score) and \"shots\" (shot -> "
+                       "match|mismatch: why)"]
+    shots = cal.get("shots", {})
+    if c.get("required"):
+        if not isinstance(cal.get("reference"), dict) or not cal["reference"]:
+            errs.append("calibration.reference: score the reference image on the rubric before the shots")
+        errs += ["calibration.shots: no style/density judgement for shot %s" % s for s in names
+                 if not str(shots.get(s, "")).strip().lower().startswith(("match", "mismatch"))]
+    item, cap = c.get("cap_item"), c.get("cap", 3)
+    for s, j in shots.items():
+        n = ((v.get("scores") or {}).get(s) or {}).get(item) if item else None
+        if str(j).strip().lower().startswith("mismatch") and isinstance(n, int) and not isinstance(n, bool) and n > cap:
+            errs.append("shot %s: style/density mismatch with the reference caps %s at %d, got %d" % (s, item, cap, n))
+    return errs
+
+
 def validate_verdict(v, rid: str, cfg: dict) -> list:
     """Reasons the verdict cannot be stored (empty = valid). Visual ids need the full score matrix: every shot in the
     current shot set x every rubric item; "n/a" only on stage-A ids for items outside visual.stage_a_items; the
@@ -438,6 +492,7 @@ def validate_verdict(v, rid: str, cfg: dict) -> list:
                     low.append("%s %s=%s" % (shot, i, n))
         if v.get("verdict") == "pass" and v.get("incomplete"):
             errs.append("an incomplete review cannot pass")
+        errs += calibration_problems(v, cfg, names)
     if v.get("verdict") == "pass" and low:
         errs.append("verdict pass but rubric scores below %s: %s" % (floor, ", ".join(low)))
     return errs
@@ -599,6 +654,31 @@ def below_bar_headline(rs: dict) -> tuple:
     for p in below:
         ph = phases[p]
         rounds = ", ".join("%s %s" % (k, r) for k, r in (ph.get("rounds") or {}).items())
-        issues = "; ".join((ph.get("known_issues") or [])[:3])
-        parts.append("%s (%s)%s" % (p, rounds or "rounds unknown", ": " + issues if issues else ""))
+        issues = [str(i) for i in ph.get("known_issues") or []]
+        # lead with the last stage that ran (main): its open problems supersede stage A's, which r2's headline
+        # repeated although the main stage had fixed most of them
+        main = [i for i in issues if i.startswith("%s main:" % p)]
+        lead = (main or issues)[:3]
+        gap = composition_gap(ph, issues)
+        if gap:
+            lead = [gap] + lead
+        parts.append("%s (%s)%s" % (p, rounds or "rounds unknown", ": " + "; ".join(lead) if lead else ""))
     return "BELOW BAR: %d visual phase(s) closed without a reviewer pass: %s" % (len(below), " | ".join(parts)), below
+
+
+COMPOSITION_WORDS = re.compile(r"\b(composition|framing|density|dressing|under-dressed|bare|coverage|share of the frame)\b", re.I)
+
+
+def composition_gap(ph: dict, issues: list) -> str:
+    """'composition/style gap vs the reference ...' when the last main-stage scores have the calibration item
+    (kit.json visual.calibration.cap_item) at or below its cap on a shot, or a known issue names framing or density."""
+    c = calibration_cfg(config())
+    item, cap = c.get("cap_item"), c.get("cap", 3)
+    scores = (ph.get("last_scores") or {}).get("main") or {}
+    low = sorted(s for s, row in scores.items() if isinstance(row, dict) and item and
+                 isinstance(row.get(item), int) and row[item] <= cap)
+    named = [i for i in issues if COMPOSITION_WORDS.search(i)]
+    if not low and not named:
+        return ""
+    return "composition/style gap vs the reference%s" % (" (%s at or below the calibration cap on %s)" % (
+        item, ", ".join(low)) if low else "")

@@ -23,7 +23,8 @@ tools/headless/launch.sh --branch r2-run              # Linux / macOS / Git Bash
 powershell -NoProfile -File tools/headless/launch.ps1 -Branch r2-run    # Windows
 ```
 The launcher checks the list above, refuses while the session recorded in `.claude/run-state/session.json` is still
-alive, generates a session id (uuid4), prints the resume command and runs:
+alive, takes the session id from `--session-id <uuid>` (`-SessionId`; validated, else a fresh uuid4), prints the resume
+command and runs:
 ```
 claude -p "<handoff line>" --permission-mode acceptEdits --session-id <id> --output-format stream-json --verbose
 ```
@@ -31,6 +32,12 @@ with `KIT_HEADLESS=1`, recording `.claude/run-state/session.json` (runtime file,
 `{session_id, pid, started, branch, head, mode: "headless", log_path, stream, launcher, resumes}` (pid = the claude
 process; log_path = `~/.claude/projects/<slug>/<id>.jsonl`, slug = the project path with every non-alphanumeric
 character replaced by `-`). The stream goes to `build/headless/<id>.stream.jsonl`.
+Pre-assign the id when something must know it before the run starts (a watcher started first, an operator note):
+```bash
+SID=$(python3 -c 'import uuid; print(uuid.uuid4())')
+tools/headless/launch.sh --branch r2-run --session-id "$SID"    # session.json, log path, claude --session-id, resume hint
+tools/watch/run_watch.sh --repo <owner>/<repo> --branch r2-run --project-dir . --session-id "$SID"
+```
 Never use `--permission-mode bypassPermissions` or `--dangerously-skip-permissions`: the committed allowlist plus the
 guard hook is the containment (README, "What the guard is").
 
@@ -89,6 +96,23 @@ the below-bar headline. On a stall, pick up with `tools/headless/resume.sh` (it 
 two sessions never run on one clone). Box mode (same machine) reads the session log mtimes under
 `~/.claude/projects/<slug>/`; PC mode reads the heartbeat branch on GitHub. Usage and the contract:
 [`tools/watch/README.md`](../tools/watch/README.md).
+
+## One loop: launch, watch, resume, close out (`scripts/run-loop.sh`)
+```bash
+scripts/run-loop.sh --tmux myproj-r3 --branch r3-run [--prompt "<handoff line>"]   # detached; tmux attach -t myproj-r3
+```
+A thin loop over the tools above (it reimplements none of them and never calls `claude` itself):
+- **Start:** no `session.json` → `launch.sh`; recorded session dead and the run not ended → `resume.sh`; recorded
+  session alive → watch only. A run-state.json that already says `done`/`blocked`/`halted` is refused unless
+  `--new-run` (it would end the watch at once).
+- **Watch:** `run_watch.sh --mode box --project-dir .`; `--stall-min` (default 20) is the fallback when kit.json and
+  run-state.json set no limit.
+- **Stall:** `resume.sh` (kills a still-live session first), up to `--max-resumes` (5); then run-state.json
+  `status: blocked` with `blocked_reason`. The watcher's hard cap (`--max-hours`, default 48) also blocks.
+- **End:** `done` or `blocked` → waits for claude to exit (15 min, then resume.sh stops it), resumes the same session
+  once with the close-out prompt (lessons-writer subagent, STATUS.md, RUN-REPORT.md, push), then `git push origin
+  HEAD:<branch>`. `halted` (`.claude/HALT`, a person's stop) skips the close-out; so does `--no-closeout`.
+- Log: `.claude/run-state/run-loop.log` (git-ignored). Without tmux, `--tmux` falls back to `nohup`.
 
 ## What to read afterwards
 `run-state.json` (status, session_id, below-bar phases), `RUN-REPORT.md` / `run-report.json`,

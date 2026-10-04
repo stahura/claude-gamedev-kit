@@ -19,7 +19,8 @@ row of one stage without a captured verdict (invalid, unreviewed, abandoned) set
 the reason: the watcher exits 3 and the orchestrator picks up. `start` snapshots the current shots
 (docs/shots/<run>/<phase>/final/*.png) into docs/shots/<run>/<phase>/rounds/<id>/, prints the reviewer brief (saved as
 review-brief.md) and writes previous-round.md there: the previous round's top problems and open findings, never its
-scores (the reviewer scores this round first, then opens it).
+scores (the reviewer scores this round first and writes its blind scores, then opens it; the SubagentStop hook
+rejects a verdict that looked earlier or raised a blind score).
 `close` refuses a visual phase without a stored visual-reviewer pass (and perf record), and any stored visual verdict
 whose sha256 differs from the one the SubagentStop hook logged. A stage at its cap without a pass closes below bar
 with `--known-issues` (refused unless the stage has at least one captured verdict): the phase is marked [x]
@@ -72,7 +73,9 @@ def record_below_bar(pid: str, below: dict) -> None:
     """run-state.json phases[pid] (and run-report.json known_issues + headline when it exists already)."""
     rs = K.load_rs()
     ph = rs.setdefault("phases", {}).setdefault(pid, {})
-    issues = ["%s %s: %s" % (pid, st, p) for st, b in below.items() for p in b["top_problems"]]
+    # the last stage that ran first: its open problems supersede stage A's (kitlib.below_bar_headline leads with them)
+    issues = ["%s %s: %s" % (pid, st, p) for st, b in sorted(below.items(), key=lambda x: x[0] != "main")
+              for p in b["top_problems"]]
     ph.update(status="done_below_bar", closed_below_bar=True, known_issues=issues,
               last_scores={st: b["last_scores"] for st, b in below.items()},
               rounds={st: "%d/%d" % (b["rounds"], b["cap"]) for st, b in below.items()},
@@ -144,8 +147,9 @@ def previous_round_notes(prev: str, rel: str, cfg: dict) -> str:
         lines.append("- No verdict stored for it (%s%s): compare the shots only" % (
             rec.get("status", "unknown"), ": " + "; ".join(rec.get("problems", [])) if rec.get("problems") else ""))
     lines.append("- Check whether those problems were fixed. Do not reverse your own previous request unless that "
-                 "change made the shot worse; say so explicitly. Add \"vs_previous\" to your JSON verdict. Do not "
-                 "change the scores you already gave this round because of this file.")
+                 "change made the shot worse; say so explicitly. Add \"vs_previous\" to your JSON verdict (and what "
+                 "still separates each shot from the reference). This comparison can lower a blind score for a flaw "
+                 "you can name, never raise one: \"better than last round\" is not \"close to the reference\".")
     return "\n".join(lines) + "\n"
 
 
@@ -155,6 +159,10 @@ def start_visual(rid: str, cfg: dict) -> int:
     pid, stage, n = K.VISUAL_ID.match(rid).groups()
     n = int(n)
     name = K.stage_name(stage)
+    bad = K.calibration_config_problems(cfg)
+    if bad:
+        print("START REFUSED: %s (the owner fixes kit.json between runs; log it in PROGRESS.md)" % "; ".join(bad))
+        return 2
     blocked = K.check_failed_streak(pid, stage, "review.py")
     if blocked:
         print("START REFUSED: the run is blocked: %s. run-state.json status is now blocked; log it in PROGRESS.md and "
@@ -194,13 +202,25 @@ def start_visual(rid: str, cfg: dict) -> int:
     lines = ["# Reviewer brief: %s (%s of %s, round %d; %d of %d reviewed rounds used)" % (
                  rid, name, pid, n, s["rounds"], cap),
              "- This round's shots (review these; open every PNG): %s/rounds/%s/ (snapshot of %s/final/)" % (rel, rid, rel)]
+    cal = K.calibration_cfg(cfg)
+    if cal:
+        lines.append("- Calibration first: score the reference image(s) themselves on the rubric, then judge each "
+                     "shot's whole frame (overall style, scene density, composition and framing) against them, at the "
+                     "reference's display size. A style or density mismatch caps %s at %d (\"calibration\" in your "
+                     "JSON verdict)." % (cal["cap_item"] or "the style item", cal["cap"]))
+    if not stage and n >= cap:
+        lines.append("- Final round of the main stage: in run r2 the in-run reviewer was lenient by ~12 of 21 cells "
+                     "against an external blind score (19/21 vs 7/21 at 4+). Score as the external scorer would; an "
+                     "in-run pass here stays provisional until an external blind score.")
     notes = os.path.join(snap, "previous-round.md")
     if prev:
         with open(notes, "w", encoding="utf-8", newline="\n") as f:
             f.write(previous_round_notes(prev, rel, cfg))
-        lines.append("- Previous round: %s. **First** score every shot of this round on its own. **Only then** open "
+        lines.append("- Previous round: %s. **First** score every shot of this round on its own and write the blind "
+                     "scores block (```json {\"blind_scores\": {shot: {item: score}}}```). **Only then** open "
                      "%s/rounds/%s/previous-round.md (its top problems, no scores) and the previous shots in "
-                     "%s/rounds/%s/, compare, and add \"vs_previous\" to your JSON verdict." % (prev, rel, rid, rel, prev))
+                     "%s/rounds/%s/, compare, and add \"vs_previous\" to your JSON verdict; final scores may only "
+                     "stay or go down from the blind ones." % (prev, rel, rid, rel, prev))
     else:
         if os.path.exists(notes):
             os.remove(notes)

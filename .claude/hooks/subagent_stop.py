@@ -7,7 +7,11 @@ delivered); any other last tool_use input holding a ```json verdict; the last as
   - the id is a visual review id (<phase>-visualA-r<N> or <phase>-visual-r<N>) started with `tools/review.py start`,
   - the verdict passes kitlib.validate_verdict (every shot x every rubric item, current shot_set_version, floor),
   - the transcript shows the reviewer opened every shot PNG of the current set (Read tool) from one folder that is not
-    another round's snapshot (it may also open the previous round's PNGs).
+    another round's snapshot (it may also open the previous round's PNGs),
+  - blind comparison: if it opened anything of the previous round (previous-round.md or another round's PNGs), an
+    earlier assistant text holds its blind scores (```json {"blind_scores": {shot: {item: n}}}```), written before
+    that first look, and no final score is above its blind score (vs_previous can lower a score, never raise it: r2's
+    reviewer said "better" every round while the distance to the reference barely moved).
 The stored file's sha256 is logged with the "stored" line; `review.py close` refuses a verdict whose file no longer
 matches it (tamper check against accidents and hand edits, not a forge-proof seal).
 Otherwise: if the reviewer already handed back, a block cannot be acted on (the subagent has ended), so the review is
@@ -58,7 +62,7 @@ def _strings(o):
 def transcript(path: str) -> dict:
     """reads (paths opened with Read), last_text (last assistant text), handback (last SubagentHandback input text or
     None), tool_texts (inputs of other tool_use blocks, in order), prompt (first user text: the builder's prompt)."""
-    t = {"reads": [], "last_text": "", "handback": None, "tool_texts": [], "prompt": ""}
+    t = {"reads": [], "last_text": "", "handback": None, "tool_texts": [], "prompt": "", "events": []}
     try:
         with open(path, encoding="utf-8") as f:
             lines = f.readlines()
@@ -90,6 +94,14 @@ def transcript(path: str) -> dict:
                 x.get("text", "") for x in c or [] if isinstance(x, dict) and x.get("type") == "text")
             if msg["role"] == "assistant" and text.strip():
                 t["last_text"] = text
+            if msg["role"] == "assistant":   # (kind, value) in transcript order, for the blind-comparison check
+                for x in c if isinstance(c, list) else [{"type": "text", "text": c}]:
+                    if not isinstance(x, dict):
+                        continue
+                    if x.get("type") == "text" and str(x.get("text", "")).strip():
+                        t["events"].append(("text", str(x["text"])))
+                    elif x.get("type") == "tool_use" and x.get("name") == "Read" and isinstance(x.get("input"), dict):
+                        t["events"].append(("read", str(x["input"].get("file_path", "")).replace("\\", "/")))
             elif msg["role"] == "user" and text.strip() and not t["prompt"]:
                 t["prompt"] = text
     return t
@@ -149,7 +161,53 @@ def check(data: dict, cfg: dict, t: dict):
     else:
         full.sort(key=lambda d: (not d.endswith("/rounds/" + rid.lower()), not d.endswith("/final")))
         v["shots_folder"] = full[0]
+    errs += blind_problems(v, rid, t, other_round)
     return rid, v, src, errs
+
+
+def blind_scores(text: str):
+    for b in [b.split("```", 1)[0] for b in text.split("```json")[1:]]:
+        try:
+            d = json.loads(b.strip())
+        except ValueError:
+            continue
+        if isinstance(d, dict) and isinstance(d.get("blind_scores"), dict):
+            return d["blind_scores"]
+    return None
+
+
+def blind_problems(v: dict, rid: str, t: dict, other_round) -> list:
+    """Blind comparison: blind scores for every scored cell, written before the first look at the previous round;
+    final <= blind."""
+    first, blind = None, None
+    for i, (kind, val) in enumerate(t["events"]):
+        low = val.lower()
+        if kind == "read" and (low.endswith("/previous-round.md") or
+                               (low.endswith(".png") and "/" in low and other_round.search(low.rsplit("/", 1)[0]))):
+            first = i
+            break
+        if kind == "text" and blind is None:
+            blind = blind_scores(val)
+    if first is None:
+        return []
+    if blind is None:
+        return ["you opened the previous round (%s) before writing your blind scores: score this round first and "
+                "write them as ```json {\"blind_scores\": {shot: {item: score}}}``` before opening previous-round.md "
+                "or the previous PNGs" % t["events"][first][1]]
+    # every scored cell of the verdict needs its blind score, or a missing cell would escape the never-raise check
+    missing = ["%s %s" % (s, i) for s, row in (v.get("scores") or {}).items() if isinstance(row, dict)
+               for i, n in row.items()
+               if not isinstance(blind.get(s), dict) or i not in blind[s] or
+               (isinstance(n, int) and not isinstance(blind[s][i], int))]
+    if missing:
+        return ["your blind_scores block must score every shot x item of your verdict before you open the previous "
+                "round; missing: %s" % ", ".join(missing[:12]) + (" (+%d more)" % (len(missing) - 12)
+                                                                    if len(missing) > 12 else "")]
+    raised = ["%s %s %s->%s" % (s, i, blind[s][i], n) for s, row in (v.get("scores") or {}).items()
+              if isinstance(row, dict) and isinstance(blind.get(s), dict)
+              for i, n in row.items() if isinstance(n, int) and isinstance(blind[s].get(i), int) and n > blind[s][i]]
+    return ["vs_previous can never raise a score: final scores above your blind scores (%s); keep the blind scores "
+            "or lower them for a flaw you can name in this round's shot" % ", ".join(raised)] if raised else []
 
 
 def main() -> int:

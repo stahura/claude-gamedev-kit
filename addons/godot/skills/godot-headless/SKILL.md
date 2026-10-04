@@ -7,8 +7,14 @@ description: Building, testing, screenshotting and exporting a Godot 4 project f
 ## Commands
 - Windows: run Godot from the **PowerShell tool** with the console binary (`godot_console` / `Godot_*_console.exe`);
   the GUI `.exe` detaches immediately and scripted runs race ahead. Git Bash cannot run `.cmd` shims.
-- Linux: `godot --headless ...`; screenshots need a display: `xvfb-run -a godot --path . ...` (software GL is slow and
-  is not good enough to judge Forward+ lighting: do visual review on a GPU machine).
+- Linux: `godot --headless ...` for import/tests/export. Screenshots need a display (`--headless` renders nothing);
+  without a GPU, Forward+ on Mesa lavapipe (software Vulkan, `apt install mesa-vulkan-drivers`) under `xvfb-run` is
+  good enough for look review: it matches GPU renders (mean abs diff < 1/255 vs an RTX 4090, Godot 4.7.2), ~0.7 s per
+  1080p frame, ~2-3 min per shot with 150 settle frames:
+  `xvfb-run -a -s "-screen 0 2560x1440x24" godot --path . --rendering-driver vulkan --rendering-method forward_plus --resolution 1920x1080 --fixed-fps 60 --quit-after 20000 -s res://tools/render_shots.gd -- --out=<dir>`.
+  Mobile is close but not identical; never review the look from `gl_compatibility` (llvmpipe: washed out, no
+  SSAO/SDFGI). A GPU is only needed for perf (fps) checks and real-time play-testing: on a software run the perf gate
+  is deferred (kit.json `visual.perf` thresholds null) and reported as not measured.
 - `godot --headless --path . --import` after adding any file, and after adding a script with a new `class_name`
   (scripts using it fail to parse until the global class cache is rebuilt).
 - Smoke: `godot --headless --path . --fixed-fps 60 -s res://tests/_harness/smoke_runner.gd -- --scenarios=a,b --watchdog=180`.

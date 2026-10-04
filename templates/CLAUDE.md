@@ -33,3 +33,10 @@ Read this, then `BRIEF.md`, `PLAN.md` and the tail of `PROGRESS.md`. Load the `r
   the path in a heredoc, commit message or echo text is fine. Read stored verdicts with `python tools/review.py list`.
 - Long renders/bakes: call `python .claude/hooks/heartbeat.py --beat` between steps, or a watcher may report a stall.
 - Gameplay randomness must use its own seeded RNG; cosmetic systems (audio, particles) must not consume it.
+- Headless runs deny chained shell commands (`a && b`) and heredoc rewrites of files: run one command per call and
+  edit files with the Write/Edit tools.
+- Fresh clones may have no git `user.name`: set it repo-local at the start of the run, not mid-commit.
+- Contact sheets built from `final/` can pick up an old `contact.png`: build them from the iteration folder.
+- Never edit files a running render, bake or build reads: later shots pick up the edit and the set is polluted. Wait
+  for it to finish (wait on log text; `until ! pgrep -f <pattern>` matches itself).
+<!-- kit:visual-pitfalls -->

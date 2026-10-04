@@ -52,8 +52,15 @@ python tools/perf_gate.py --phase P<N> bench.log
 - Add `--set=res://<path>.json` for another shot set and `--only=shot-01-x,shot-02-y` to re-render the shots a
   single change affects (look-and-fix before/after pairs).
 - `--quit-after` counts frames: raise it above (shots x (settle_frames + 2)) for big sets; it is only a failsafe.
-- Needs a GPU window (Forward+ lighting under `--headless` renders nothing reviewable). On Linux: `xvfb-run -a` only
-  with a GPU-backed display.
+- Needs a window (Forward+ lighting under `--headless` renders nothing). Linux without a GPU: Forward+ on Mesa lavapipe
+  (software Vulkan, `apt install mesa-vulkan-drivers`) under `xvfb-run` matches GPU renders (mean abs diff < 1/255 vs
+  an RTX 4090 render of the same shot; measured with Godot 4.7.2), ~0.7 s per 1080p frame, ~2-3 min per shot with 150
+  settle frames, so look review on it is valid:
+  `xvfb-run -a -s "-screen 0 2560x1440x24" godot --path . --rendering-driver vulkan --rendering-method forward_plus --resolution 1920x1080 --fixed-fps 60 --quit-after 20000 -s res://tools/render_shots.gd -- --out=<dir>`.
+  The Mobile renderer is close but not identical; `gl_compatibility` (llvmpipe) looks clearly different (washed out, no
+  SSAO/SDFGI): never use it for look review. A GPU is only needed for `--bench` / perf checks and real-time
+  play-testing: software fps mean nothing, so on a software run set kit.json `visual.perf` thresholds to null (perf
+  gate deferred) and report perf as not measured.
 - `settle_frames` in `shots.json` (default 30) lets TAA, SDFGI and exposure converge; raise it if shots differ
   between two renders of the same commit.
 - Two renders of the same commit must look identical: the script seeds the global RNG per shot (`seed` in the set)

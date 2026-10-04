@@ -21,8 +21,9 @@
 		"on_cap": "proceed_with_known_issues",
 		"rubric_min_score": 4,
 		"stage_a_min_score": 4,
-		"rubric": ["silhouette", "depth", "light", "palette", "cohesion", "secondary_detail", "ground", "life"],
+		"rubric": ["silhouette", "depth", "light", "palette", "cohesion", "style_match", "secondary_detail", "ground", "life"],
 		"stage_a_items": ["silhouette", "depth", "light", "palette"],
+		"calibration": {"required": true, "cap_item": "style_match", "cap": 3},
 		"perf": {"min_avg_fps": 60, "min_low1_fps": 30},
 		"style_reference": "docs/style_reference"
 	},

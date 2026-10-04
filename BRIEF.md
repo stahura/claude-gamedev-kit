@@ -28,7 +28,14 @@ to an unattended run). -->
   closes below bar (`tools/review.py close P<N> --known-issues`) with honest scores and the run continues. Rubric
   pass score `visual.rubric_min_score` = <4> (stage A: `visual.stage_a_min_score` = <4>); rubric items
   `visual.rubric` = <default 3D set | your own>; stage-A items `visual.stage_a_items` = <lighting/palette items>;
-  performance: `visual.perf` = <e.g. avg 60, 1% low 30 fps at 1080p on the benchmark path | null, bible budgets>
+  performance: `visual.perf` = <e.g. avg 60, 1% low 30 fps at 1080p on the benchmark path | null: bible budgets, or
+  no GPU on the run machine (perf deferred, reported not measured)>
+- Reviewer calibration: `visual.calibration` = <{"required": true, "cap_item": "<the style item, e.g. stylization>",
+  "cap": 3}>: the reviewer scores the reference first and caps the style item of any shot whose overall style or scene
+  density does not match it. The in-run reviewer is lenient (r2: 19/21 in-run vs 7/21 external blind): the final
+  stage's pass is provisional until the close-out's external blind score.
+- Order of work: frame the hero shot and dress the scene to the reference's density (<vegetation, props, outcrops,
+  painterly ground>) before tuning the core asset's shader.
 - Style slice (P1, before any content): <size, e.g. 60 x 60 m or equivalent; contents>. Lighting first on a small
   dressed patch (one real rock, a few grass cards), the core deliverable (<e.g. the water shader>) prototyped on a side
   track meanwhile, then slice assets, then the look is locked in CLAUDE.md and `docs/style_reference/`.
@@ -54,12 +61,16 @@ to an unattended run). -->
 ## Known context
 - Last run report: <!-- path to run-report.json -->
 - Known issues to fix first:
+- Recipe and baseline: start from `docs/RECIPE.md` (<preset>, the values that passed) and the previous run's
+  `LESSONS.md` baseline (<rounds-to-pass per stage, tokens, cost, external 4+ cells>); this run measures the same.
 
 ## Questions already answered
 <!-- Everything Claude would otherwise stop to ask. A below-bar visual stage never stops the run (kit default); do not
 write "stop the run if the bar is not met". Headless: anything off the allowlist is denied and logged, never asked. -->
 
 ## Deliverables the bots will read
-- run-state.json, run-report.json, RUN-REPORT.md, PROGRESS.md
+- run-state.json, run-report.json, RUN-REPORT.md, PROGRESS.md (the report leads with the last stage's open issues
+  and, for visual runs, the composition gap vs the ref)
+- After the run, in a resumed same session: the close-out (`docs/close-out.md`): LESSONS.md, docs/RECIPE.md, kit PRs
 - Release: <run>-build prerelease
 - Screenshots / contact sheets: docs/shots/<run>/

@@ -88,10 +88,12 @@ stream-json --verbose` with the committed allow list; never `bypassPermissions`.
 | `tools/watch/run_watch.sh` | Watcher for the orchestrating bot: blocks until the run ends (run-state status, run report, HALT) or stalls (no session-log or heartbeat write for the phase's `stall_min`, or a dead claude pid), prints one JSON line with the stall limit, `pid_alive` and the below-bar `headline`, optional wake POST (tools/watch/README.md). |
 | `tools/perf_gate.py` | Automated performance gate: the benchmark's `BENCH avg_fps= low1_fps=` line against `kit.json` `visual.perf`. |
 | `tools/init_project.py` | Project setup (above); `--python python3` for Linux boxes without `python`. |
+| `scripts/run-loop.sh` | One unattended loop over launch.sh / run_watch.sh / resume.sh: launch or pick up, auto-resume on a stall (max 5), then mark blocked; on done or blocked it runs the close-out (lessons-writer) itself. `--tmux <name>` detaches (docs/headless.md). |
 | `tests/selftest.py` | Exercises every hook, `paid.py` (fake service), `review.py` (caps, below bar, previous round), the guard's write-target parsing, the heartbeat (throwaway git remote), the watcher (`--once`) and init in throwaway copies; also runs itself inside an `init --visual` project. |
-| `docs/headless.md` | Headless unattended runs: pre-launch checklist, launch and resume, denied commands, heartbeat, watcher. |
+| `docs/headless.md` | Headless unattended runs: pre-launch checklist, launch (optional pre-assigned `--session-id`) and resume, denied commands, heartbeat, watcher. |
+| `docs/close-out.md`, `templates/LESSONS.md` | The close-out after every run (same session): recipe, pitfalls, reviewer fixes, wasted-token report and baseline, external blind score; the LESSONS.md skeleton. |
 | `addons/godot/` | `godot-headless` skill (commands, smoke-runner contract, traps), `godot-lighting-post` skill (Environment/CameraAttributes for the style slice's lighting, tested shot-render command), shot-set renderer, contact sheet, GLB bake, clip-import mesh stripper, four-view model render, log reader; optional `docs/stylized-techniques.md` (reference, not rules). |
-| `docs/visual-pipeline.md` | Engine-agnostic visual pipeline: visual-direction session, art bible gate, look-and-fix loop with before/after and revert, art-director rubric, asset routes, style slice (lighting on placeholders, slice assets, style lock; Godot, Unity, Unreal), parallelism rule. |
+| `docs/visual-pipeline.md` | Engine-agnostic visual pipeline: visual-direction session, art bible gate, look-and-fix loop with before/after and revert, art-director rubric, asset routes, reviewer calibration on the reference and blind comparison, style slice (dress and frame first, lighting, slice assets, style lock; Godot, Unity, Unreal), pitfalls (symptom -> cause -> fix -> detect early), parallelism rule. |
 | `templates/ART-BIBLE.md` | Art bible (refs, style target, palette, lighting, materials, budgets per asset class, scale, do/don't, owner approval line); copied to the root. |
 | `templates/shots.json`, `ASSET-SPEC.md` | Fixed, versioned, seeded shot set (copied to `docs/shots/`); per-asset spec for per-asset agents. |
 | `templates/visual/snippets.md` | The visual PLAN/CLAUDE.md parts `init_project.py --visual` inserts (P0 shot line, P1 style slice, run rule, style lock). |
@@ -106,18 +108,25 @@ For any game, 3D or asset project (`docs/visual-pipeline.md`). Each step gates t
    changes reverted); iterations stay in the git-ignored `docs/shots/_work/`, only the final set, before/after pairs
    and the review snapshots are committed. Each round ends with a review; rounds per stage are capped by
    `visual.review_caps` (stage A 3, main stage 6, per-phase overrides). The builder never passes its own work: the
-   visual-reviewer scores every shot 1-5 on every `visual.rubric` item (default silhouette, depth, light, palette,
-   cohesion, secondary detail, ground, life), compares each shot with its previous round, and passes it at 4+ on every
-   item; a hook stores its verdict and `review.py close` refuses a visual phase without it. Performance is the
+   visual-reviewer first scores the reference itself and judges each shot's whole-frame style and density against it
+   (a mismatch caps the style item, `visual.calibration.cap_item`, default `style_match`), scores every shot 1-5 on
+   every `visual.rubric` item (default silhouette, depth, light, palette, cohesion, style match, secondary detail,
+   ground, life) blind, only then compares
+   each shot with its previous round (never raising a score), and passes it at 4+ on every item; a hook stores its verdict and `review.py close` refuses a visual phase without it. Performance is the
    automated `perf_gate.py` check. **Below bar never halts the run:** a stage at its cap closes with
    `review.py close P<N> --known-issues` (honest scores and known issues in run-state.json and the run report).
-4. Style slice (P1), a ~60 x 60 m diorama or equivalent: lighting and post first, on a small dressed patch (one real
-   rock, a few grass cards), locked; the core asset is prototyped on a side track meanwhile and has its own review
+4. Style slice (P1), a ~60 x 60 m diorama or equivalent: frame the hero shot and dress the scene to the reference's
+   density (vegetation, props, outcrops, the painterly/base surface) **before** any shader tuning; then lighting and
+   post on that dressed area, locked; the core asset is prototyped on a side track meanwhile and has its own review
    budget.
 5. Then the slice assets, one per route (AI generator only for characters, creatures and organic hero props via
    `paid.py`; every generated asset through Blender cleanup with the bible grade; environments from modular kits).
    When it passes, the look is locked: `docs/style_reference/` + the "Style lock" section of CLAUDE.md.
 6. Only then content, and per-asset agents, each with an `ASSET-SPEC.md`, the bible and the style lock.
+7. After every run, the **close-out** in the same resumed session (`docs/close-out.md`): `LESSONS.md` (from
+   `templates/LESSONS.md`), `docs/RECIPE.md` with per-style presets, kit-wide pitfalls, reviewer fixes, the
+   wasted-token report and baseline, an external blind score next to the in-run one, kit PRs. The next brief starts
+   from the recipe and is measured against the baseline.
 Non-visual projects: initialise without `--visual` (the default).
 
 ## Headless runs
@@ -139,6 +148,10 @@ Non-visual projects: initialise without `--visual` (the default).
    overrides for render/bake phases, or the recorded claude pid is dead; a single longer tool call looks like a stall
    unless it runs `heartbeat.py --beat`), blocked/halted (3), watcher error (4) or the 6 h cap (5), and prints one
    JSON line (with the stall limit used, `pid_alive`, and the below-bar `headline`).
+6. `scripts/run-loop.sh --tmux <name> [--prompt "..."]` does 2 and 5 in one unattended loop: launch (or resume a
+   dead recorded session, or just watch a live one), watch, auto-resume on a stall up to 5 times, then mark
+   run-state.json `blocked`; when the run ends (done or blocked) it resumes the same session once for the close-out
+   (lessons-writer, STATUS.md, RUN-REPORT.md, push). Nothing waits for a person or bot to notice the end.
 
 ## What the guard is (and is not)
 The hooks, deny rules and gates **prevent accidents and shortcuts, not malice.** `python`, `blender -P <script>`,
@@ -188,6 +201,19 @@ repo-scoped GitHub token, so a mistake cannot reach other repos or files. Add se
 - The guard denied three harmless commands that only mentioned `.claude/run-state` in text: it now parses real write
   targets.
 
+## Why it looks like this (r2 lessons, second pilot run)
+- The in-run reviewer passed 19/21 shot-items at 4+; an external blind score gave 7/21. It never compared the whole
+  frame with the dense, painterly reference (the hero frame was ~60 % bare meadow): the reviewer now calibrates on the
+  reference first, and a style/density mismatch caps the style item at 3. An in-run pass on the final stage is
+  provisional until an external blind score.
+- `vs_previous` said "better" every round while the distance to the ref barely moved: the reviewer writes blind
+  scores before it looks at the previous round, and the hook rejects a comparison that raises one.
+- Six water-shader rounds were polished in an under-dressed frame: dress and frame to the ref before shader tuning.
+- The below-bar headline led with stale stage-A problems: it now leads with the last stage's open issues and the
+  composition gap.
+- Software rendering is fine for look review: Forward+ on Mesa lavapipe matched a GPU render; only perf needs a GPU.
+- A standard close-out (lessons, recipe, pitfalls, rubric fixes, token baseline) now follows every run.
+
 ## Platforms
 Hook stdin is decoded with BOM handling (UTF-8/UTF-16, as some Windows agent hosts send), and the PreToolUse guard
 fails closed: unreadable input is denied, never treated as empty.
@@ -195,6 +221,6 @@ Hooks and tools are Python 3.8+ stdlib only and run on Windows and Linux. Hook c
 `python "$CLAUDE_PROJECT_DIR/..."` (Windows has `python`); on Linux images with only `python3`, initialise with
 `python3 tools/init_project.py ... --python python3`, which rewrites every hook command (or symlink `python`).
 Hook calls are logged to `.claude/run-state/hooks.log.jsonl` (SubagentStop: every call with its outcome
-stored/blocked/invalid/ignored/error and the verdict source; Stop decisions; guard denies; hook exceptions). Software
-rendering (lavapipe under `xvfb-run`) gives the same image as a GPU, only slower, so visual review can run on a Linux
-machine without a GPU; the performance gate and real-time play-testing need a GPU.
+stored/blocked/invalid/ignored/error and the verdict source; Stop decisions; guard denies; hook exceptions). Visual review does
+not need a GPU (Godot: Forward+ on Mesa lavapipe under `xvfb-run` matches GPU renders; see the `godot-headless`
+skill); a GPU is only needed for perf (fps) checks and real-time play-testing, so software runs defer the perf gate.
